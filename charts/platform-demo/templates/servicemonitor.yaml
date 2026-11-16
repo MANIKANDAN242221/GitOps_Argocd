@@ -1,0 +1,25 @@
+{{- /* Prometheus scrape config for components that expose /metrics (kube-prometheus-stack). */}}
+{{- range $name, $c := .Values.components }}
+{{- if and $c.enabled $c.serviceMonitor.enabled }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+  annotations:
+    # The CRD may not exist yet on a fresh cluster; let the sync retry instead of failing dry-run.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform-demo.selectorLabels" $ctx | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ $c.serviceMonitor.path }}
+      interval: {{ $c.serviceMonitor.interval }}
+      scrapeTimeout: 10s
+{{- end }}
+{{- end }}

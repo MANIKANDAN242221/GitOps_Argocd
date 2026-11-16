@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-demo
+
+# Not added to selectors, so Deployment selectors stay stable.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform-demo
+
+# One folder per app, one file per resource:
+#   backend/   configmap (generator), secret, deployment, service, hpa, pdb, servicemonitor
+#   frontend/  configmap (generator), deployment, service, ingress, hpa, pdb
+resources:
+  - namespace.yaml
+  - backend
+  - frontend

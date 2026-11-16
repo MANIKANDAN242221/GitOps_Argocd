@@ -1,0 +1,105 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      environment: prod
+
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      - APP_ENV=prod
+
+patches:
+  # Real credentials come from a Secret created outside Git with the same
+  # name (backend-secret), so drop the placeholder from base.
+  - target:
+      kind: Secret
+      name: backend-secret
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: backend-secret
+
+  # Pod count is set on the HPAs, not the Deployments.
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 6
+
+  # HTTPS on the ALB with an ACM certificate; HTTP redirects to HTTPS.
+  - target:
+      kind: Ingress
+      name: frontend
+    patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: frontend
+        annotations:
+          alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+          alb.ingress.kubernetes.io/ssl-redirect: "443"
+          alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:111122223333:certificate/CHANGE-ME # CHANGE ME
+      spec:
+        rules:
+          - host: demo.example.com # CHANGE ME
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend
+                      port:
+                        name: http
+
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 128Mi
+                  limits:
+                    memory: 512Mi
+
+# Promote by copying the tag that was tested in dev.
+images:
+  - name: backend
+    newName: 111122223333.dkr.ecr.us-east-1.amazonaws.com/prod/backend # CHANGE ME: account ID
+    newTag: "1.0.0"
+  - name: frontend
+    newName: 111122223333.dkr.ecr.us-east-1.amazonaws.com/prod/frontend # CHANGE ME: account ID
+    newTag: "1.0.0"

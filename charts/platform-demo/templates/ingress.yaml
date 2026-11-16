@@ -1,0 +1,39 @@
+{{- range $name, $c := .Values.components }}
+{{- if and $c.enabled $c.ingress.enabled }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+  {{- with $c.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ $c.ingress.className }}
+  {{- with $c.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $c.ingress.hosts }}
+    - {{- if .host }}
+      host: {{ .host | quote }}
+      {{- end }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

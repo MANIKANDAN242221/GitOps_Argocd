@@ -1,0 +1,99 @@
+# gitops-backend: Express API on :3000. Exposes /healthz, /readyz and /metrics.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+spec:
+  # No replicas field: the HPA owns the pod count. Setting it here would make
+  # Argo CD (selfHeal) reset every scale-up back to this number.
+  revisionHistoryLimit: 5
+  # A new pod must stay Ready this long before the rollout moves on.
+  minReadySeconds: 5
+  # Rollout is marked failed (Argo CD shows Degraded) after 5 min without progress.
+  progressDeadlineSeconds: 300
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+
+  # Rolling update: start 1 extra pod, wait until Ready, then remove 1 old pod.
+  # maxUnavailable 0 = never fewer Ready pods than desired -> zero downtime.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # "node" user in node:22-alpine
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Spread replicas across nodes so one node failure doesn't take them all.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backend
+      containers:
+        - name: backend
+          image: backend # set per overlay (images:)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "3000"
+          envFrom:
+            - configMapRef:
+                name: backend-config # configMapGenerator in kustomization.yaml
+            - secretRef:
+                name: backend-secret # secret.yaml
+                # Pods still start if the Secret doesn't exist yet
+                # (prod creates it outside Git).
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          # Give the Service time to drop the pod before the app gets SIGTERM.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

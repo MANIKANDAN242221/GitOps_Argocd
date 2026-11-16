@@ -1,0 +1,18 @@
+{{- /* Non-sensitive settings, loaded into the container as env vars (envFrom). */}}
+{{- range $name, $c := .Values.components }}
+{{- if and $c.enabled $c.config }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+data:
+  APP_ENV: {{ $.Values.global.environment | quote }}
+  {{- range $key, $value := $c.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

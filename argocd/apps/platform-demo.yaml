@@ -1,0 +1,36 @@
+# Frontend + backend demo app (apps/platform-demo).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-demo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/my-org/gitops-manifests.git # CHANGE ME
+    targetRevision: main
+    path: apps/platform-demo/overlays/dev # prod cluster: apps/platform-demo/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-demo
+
+  revisionHistoryLimit: 10
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+    # The ServiceMonitor CRD comes from the Terraform-managed monitoring stack,
+    # which can still be installing on a fresh cluster. Retry until it lands.
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,52 @@
+# platform-demo deployed from the Helm chart in charts/platform-demo.
+#
+# This replaces platform-demo.yaml (Kustomize). Both manage the same objects
+# in the same namespace, so enable only one: in kustomization.yaml swap
+#   - platform-demo.yaml   ->   - platform-demo-helm.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-demo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/my-org/gitops-manifests.git # CHANGE ME
+    targetRevision: main
+    path: charts/platform-demo
+    helm:
+      releaseName: platform-demo
+      # Later files override earlier ones. Prod cluster: values-prod.yaml
+      valueFiles:
+        - values.yaml
+        - values-dev.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-demo
+
+  revisionHistoryLimit: 10
+
+  syncPolicy:
+    automated:
+      prune: true    # delete objects removed from Git
+      selfHeal: true # revert manual kubectl changes
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    # Labels for the namespace Argo CD creates (Pod Security Standards).
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/warn: restricted
+    # The ServiceMonitor CRD comes from the Terraform-managed monitoring stack,
+    # which can still be installing on a fresh cluster. Retry until it lands.
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

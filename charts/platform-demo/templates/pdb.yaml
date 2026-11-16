@@ -1,0 +1,18 @@
+{{- /* Keeps node drains and cluster upgrades from evicting every replica at once. */}}
+{{- range $name, $c := .Values.components }}
+{{- if and $c.enabled $c.podDisruptionBudget.enabled }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: {{ $c.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "platform-demo.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,7 @@
+# Child Applications managed by the root app.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - monitoring.yaml
+  - platform-demo.yaml

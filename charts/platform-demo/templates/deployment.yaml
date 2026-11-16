@@ -1,0 +1,121 @@
+{{- range $name, $c := .Values.components }}
+{{- if $c.enabled }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+spec:
+  {{- /* With an HPA, leave replicas out: otherwise Argo CD selfHeal resets every scale-up. */}}
+  {{- if not $c.autoscaling.enabled }}
+  replicas: {{ $c.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ $c.revisionHistoryLimit }}
+  # A new pod must stay Ready this long before it counts as available.
+  minReadySeconds: {{ $c.minReadySeconds }}
+  # Rollout is marked failed (Argo CD shows Degraded) if it makes no progress in this time.
+  progressDeadlineSeconds: {{ $c.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      {{- include "platform-demo.selectorLabels" $ctx | nindent 6 }}
+
+  # ---------------------------------------------------------------------------
+  # Rolling update strategy
+  #   maxSurge:       extra pods allowed above the desired count during a rollout
+  #   maxUnavailable: pods allowed to be down during a rollout
+  # maxSurge 1 / maxUnavailable 0 = start one new pod, wait until Ready,
+  # then remove one old pod. Zero downtime, at the cost of one extra pod.
+  # ---------------------------------------------------------------------------
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ $c.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ $c.rollingUpdate.maxUnavailable }}
+
+  template:
+    metadata:
+      labels:
+        {{- include "platform-demo.labels" $ctx | nindent 8 }}
+      annotations:
+        # Changing a ConfigMap or Secret value changes these hashes,
+        # which changes the pod template and triggers a rolling update.
+        {{- if $c.config }}
+        checksum/config: {{ toJson (list $.Values.global.environment $c.config) | sha256sum }}
+        {{- end }}
+        {{- if and $c.secrets (not $c.existingSecret) }}
+        checksum/secret: {{ toJson $c.secrets | sha256sum }}
+        {{- end }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with $c.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Spread replicas across nodes so one node failure doesn't take them all.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "platform-demo.selectorLabels" $ctx | nindent 14 }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $c.image.repository }}:{{ $c.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $c.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ $c.containerPort }}
+          {{- with $c.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if or $c.config $c.secrets $c.existingSecret }}
+          envFrom:
+            {{- if $c.config }}
+            - configMapRef:
+                name: {{ $name }}-config
+            {{- end }}
+            {{- if or $c.secrets $c.existingSecret }}
+            - secretRef:
+                name: {{ include "platform-demo.secretName" $ctx }}
+            {{- end }}
+          {{- end }}
+          {{- with $c.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Give the Service/ALB time to stop sending traffic before SIGTERM.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ $c.preStopSleepSeconds }}
+          {{- with $c.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with $c.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

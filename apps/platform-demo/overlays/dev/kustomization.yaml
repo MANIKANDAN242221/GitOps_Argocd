@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      environment: dev
+
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      - APP_ENV=dev
+      - LOG_LEVEL=debug
+
+patches:
+  # Pod count is set on the HPAs, not the Deployments.
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+
+# ECR tags are immutable. CI pushes a new tag, then bumps newTag here:
+#   kustomize edit set image backend=<registry>/dev/backend:<tag>
+images:
+  - name: backend
+    newName: 111122223333.dkr.ecr.us-east-1.amazonaws.com/dev/backend # CHANGE ME: account ID
+    newTag: "1.0.0"
+  - name: frontend
+    newName: 111122223333.dkr.ecr.us-east-1.amazonaws.com/dev/frontend # CHANGE ME: account ID
+    newTag: "1.0.0"

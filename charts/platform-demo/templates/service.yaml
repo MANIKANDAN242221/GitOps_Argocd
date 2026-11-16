@@ -1,0 +1,21 @@
+{{- range $name, $c := .Values.components }}
+{{- if $c.enabled }}
+{{- $ctx := dict "root" $ "name" $name "c" $c }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "platform-demo.labels" $ctx | nindent 4 }}
+spec:
+  type: {{ $c.service.type }}
+  selector:
+    {{- include "platform-demo.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $c.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
+{{- end }}

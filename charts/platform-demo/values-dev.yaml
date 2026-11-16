@@ -1,0 +1,26 @@
+# Dev overrides (on top of values.yaml).
+global:
+  environment: dev
+
+components:
+  backend:
+    image:
+      repository: 111122223333.dkr.ecr.us-east-1.amazonaws.com/dev/backend # CHANGE ME: account ID
+      tag: "1.0.0" # CI bumps this after pushing to ECR
+    config:
+      LOG_LEVEL: debug
+    # Demo-only value so the Secret template has something to render.
+    # Never commit a real credential here.
+    secrets:
+      API_KEY: dev-not-a-real-secret
+    autoscaling:
+      minReplicas: 1
+      maxReplicas: 3
+
+  frontend:
+    image:
+      repository: 111122223333.dkr.ecr.us-east-1.amazonaws.com/dev/frontend # CHANGE ME: account ID
+      tag: "1.0.0"
+    autoscaling:
+      minReplicas: 1
+      maxReplicas: 3

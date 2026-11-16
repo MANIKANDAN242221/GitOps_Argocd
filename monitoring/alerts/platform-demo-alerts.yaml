@@ -1,0 +1,74 @@
+# Alerts for apps/platform-demo. Picked up by Prometheus from any namespace
+# (ruleSelectorNilUsesHelmValues = false in Terraform).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-demo
+  labels:
+    app.kubernetes.io/part-of: platform-demo
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Backend (metrics from the backend ServiceMonitor)
+    # -------------------------------------------------------------------------
+    - name: platform-demo.backend
+      rules:
+        - alert: PlatformDemoBackendDown
+          expr: absent(up{namespace="platform-demo", job="backend"} == 1)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: platform-demo backend is down
+            description: No backend pod in platform-demo has answered a Prometheus scrape for 2 minutes.
+
+        - alert: PlatformDemoBackendHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{namespace="platform-demo", job="backend", status=~"5.."}[5m]))
+              /
+            sum(rate(http_requests_total{namespace="platform-demo", job="backend"}[5m]))
+              > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: platform-demo backend 5xx rate above 5%
+            description: "{{ $value | humanizePercentage }} of backend requests failed over the last 5 minutes."
+
+        - alert: PlatformDemoBackendHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{namespace="platform-demo", job="backend"}[5m]))
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: platform-demo backend p95 latency above 500ms
+            description: "Backend p95 latency is {{ $value | humanizeDuration }}."
+
+    # -------------------------------------------------------------------------
+    # Workloads (metrics from kube-state-metrics)
+    # -------------------------------------------------------------------------
+    - name: platform-demo.workloads
+      rules:
+        - alert: PlatformDemoPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="platform-demo"}[15m]) > 3
+          labels:
+            severity: warning
+          annotations:
+            summary: platform-demo pod is restarting
+            description: "{{ $labels.pod }} ({{ $labels.container }}) restarted {{ $value | printf \"%.0f\" }} times in 15 minutes."
+
+        - alert: PlatformDemoReplicasUnavailable
+          expr: |
+            kube_deployment_spec_replicas{namespace="platform-demo"}
+              != kube_deployment_status_replicas_available{namespace="platform-demo"}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: platform-demo deployment is missing replicas
+            description: "{{ $labels.deployment }} has fewer available replicas than desired for 10 minutes."

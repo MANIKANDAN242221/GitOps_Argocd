@@ -1,0 +1,49 @@
+# Prod overrides (on top of values.yaml).
+global:
+  environment: prod
+
+components:
+  backend:
+    image:
+      repository: 111122223333.dkr.ecr.us-east-1.amazonaws.com/prod/backend # CHANGE ME: account ID
+      tag: "1.0.0" # promote the tag tested in dev
+    # Real credentials come from a Secret created outside Git
+    # (e.g. External Secrets Operator syncing AWS Secrets Manager).
+    secrets: {}
+    existingSecret: backend-secret
+    # Slower, safer rollout: 25% extra pods at a time, never below desired count.
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+    minReadySeconds: 10
+    resources:
+      requests:
+        cpu: 200m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    autoscaling:
+      minReplicas: 3
+      maxReplicas: 10
+
+  frontend:
+    image:
+      repository: 111122223333.dkr.ecr.us-east-1.amazonaws.com/prod/frontend # CHANGE ME: account ID
+      tag: "1.0.0"
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+    autoscaling:
+      minReplicas: 3
+      maxReplicas: 6
+    # HTTPS on the ALB with an ACM certificate; HTTP redirects to HTTPS.
+    ingress:
+      annotations:
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+        alb.ingress.kubernetes.io/ssl-redirect: "443"
+        alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:111122223333:certificate/CHANGE-ME # CHANGE ME
+      hosts:
+        - host: demo.example.com # CHANGE ME
+          paths:
+            - path: /
+              pathType: Prefix

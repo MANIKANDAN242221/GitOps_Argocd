@@ -1,0 +1,34 @@
+# Extra values for the kube-prometheus-stack release that Terraform installs
+# (infra-terraform/modules/monitoring-bootstrap). Argo CD does not install this chart.
+# Pass this file to the module, which applies it after its own defaults:
+#   extra_values = [file("<path>/values.yaml")]
+#
+# Storage, retention, Grafana admin secret and the cross-namespace selectors are
+# already set by the module; don't repeat them here.
+
+# -----------------------------------------------------------------------------
+# Prometheus
+# -----------------------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+
+# -----------------------------------------------------------------------------
+# Grafana
+# -----------------------------------------------------------------------------
+grafana:
+  defaultDashboardsTimezone: browser
+  # Load dashboards from ConfigMaps labelled grafana_dashboard=1 in any namespace.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
