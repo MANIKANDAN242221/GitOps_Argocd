@@ -1,0 +1,48 @@
+# Grafana + Prometheus on the same ALB as the apps (group.name "dev-external").
+# Host-based routing: needs DNS names pointing at the ALB. Until then use port-forward:
+#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+#   kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitops-monitoring-ingress
+  namespace: monitoring
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0 # better: your office/home IP, e.g. 203.0.113.10/32
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/group.name: "dev-external"
+    alb.ingress.kubernetes.io/group.order: '3'
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=1200
+    # --- HTTPS ---
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:772721871682:certificate/<id>
+spec:
+  ingressClassName: alb
+  # tls:
+  #   - hosts:
+  #       - grafana-dev.<your-domain>
+  #       - prometheus-dev.<your-domain>
+  rules:
+    - host: grafana-dev.example.com # CHANGE ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80
+    - host: prometheus-dev.example.com # CHANGE ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-prometheus
+                port:
+                  number: 9090

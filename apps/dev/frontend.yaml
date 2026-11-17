@@ -1,0 +1,103 @@
+# gitops-frontend (React build served by nginx) – listens on 8080, health at /healthz.
+# nginx proxies /api/ to BACKEND_URL.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitops-frontend-dev
+  namespace: dev
+spec:
+  # No replicas field: the HPA below owns the pod count.
+  selector:
+    matchLabels:
+      app: gitops-frontend-dev
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gitops-frontend-dev
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101 # nginx-unprivileged user
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gitops-frontend-dev
+          # CHANGE ME: tag pushed by the app pipeline (ECR tags are immutable)
+          image: "772721871682.dkr.ecr.ap-south-1.amazonaws.com/dev/frontend:1.0.0"
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: gitops-frontend-configmap-dev
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitops-frontend-dev
+  namespace: dev
+spec:
+  selector:
+    app: gitops-frontend-dev
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gitops-frontend-hpa-dev
+  namespace: dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gitops-frontend-dev
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        name: memory
+        container: gitops-frontend-dev
+        target:
+          type: Utilization
+          averageUtilization: 85
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitops-frontend-configmap-dev
+  namespace: dev
+data:
+  # Backend Service above (port 80 -> 5002)
+  BACKEND_URL: "http://gitops-backend-dev.dev.svc.cluster.local:80"

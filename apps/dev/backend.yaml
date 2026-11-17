@@ -1,0 +1,118 @@
+# gitops-backend (Express API) – listens on 5002, health at /healthz and /readyz.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitops-backend-dev
+  namespace: dev
+spec:
+  # No replicas field: the HPA below owns the pod count.
+  selector:
+    matchLabels:
+      app: gitops-backend-dev
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gitops-backend-dev
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # "node" user in node:22-alpine
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gitops-backend-dev
+          # CHANGE ME: tag pushed by the app pipeline (ECR tags are immutable)
+          image: "772721871682.dkr.ecr.ap-south-1.amazonaws.com/dev/backend:1.0.0"
+          ports:
+            - containerPort: 5002
+          envFrom:
+            - configMapRef:
+                name: gitops-backend-configmap-dev
+            - secretRef:
+                name: gitops-backend-secret-dev
+                optional: true # pods still start before the Secret is created
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5002
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitops-backend-dev
+  namespace: dev
+spec:
+  selector:
+    app: gitops-backend-dev
+  ports:
+    - port: 80
+      targetPort: 5002
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gitops-backend-hpa-dev
+  namespace: dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gitops-backend-dev
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        name: memory
+        container: gitops-backend-dev
+        target:
+          type: Utilization
+          averageUtilization: 85
+---
+# Non-sensitive settings only. Passwords, keys and tokens go in the Secret, never here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitops-backend-configmap-dev
+  namespace: dev
+data:
+  PORT: "5002"
+  APP_ENV: "dev"
+  LOG_LEVEL: "debug"
+  SERVICE_NAME: "gitops-backend"
+# ---------------------------------------------------------------------------
+# Secret: NOT stored in Git. Create it on the cluster:
+#
+#   kubectl -n dev create secret generic gitops-backend-secret-dev \
+#     --from-literal=DB_PASSWORD='...' \
+#     --from-literal=JWT_ENCRYPTION_KEY='...'
+#
+# Later: External Secrets Operator + AWS Secrets Manager.
+# ---------------------------------------------------------------------------
