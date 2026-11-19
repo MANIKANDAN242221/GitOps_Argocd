@@ -376,7 +376,7 @@ kubectl -n platform-demo port-forward svc/frontend 8080:80 # open http://localho
 | App stays `OutOfSync` | Sync error | Open the app in the Argo CD UI and read the error message. |
 | `ServiceMonitor` sync error on a new cluster | Monitoring is still installing | Wait; Argo CD retries automatically. |
 | HPA shows `<unknown>/70%` | metrics-server is missing | Install metrics-server ([setup](#10-one-time-setup)). |
-| Ingress has no ADDRESS | AWS Load Balancer Controller is missing | Install it ([setup](#10-one-time-setup)). |
+| Ingress has no ADDRESS | AWS Load Balancer Controller is missing or failing | `kubectl -n kube-system logs deploy/aws-load-balancer-controller` ([setup](#10-one-time-setup)). |
 | My `kubectl edit` change disappeared | Self-heal reverted it | Make the change in Git instead. |
 
 **Before pushing, always check that the YAML builds:**
@@ -425,9 +425,9 @@ gitops_repo_url  = "https://github.com/my-org/gitops-manifests.git"
 gitops_repo_path = "argocd/apps"
 ```
 
-**3. Install cluster add-ons.** Terraform doesn't install these yet:
+**3. Install cluster add-ons.**
 
-- **metrics-server**: gives CPU usage to the HPAs (`kubectl top pods` should work).
-- **AWS Load Balancer Controller** (with an IRSA role): turns the Ingress into an ALB.
+- **metrics-server**: gives CPU usage to the HPAs (`kubectl top pods` should work). Terraform doesn't install this yet.
+- **AWS Load Balancer Controller**: turns the Ingress into an ALB. Terraform installs it with its IRSA role (`infra-terraform/modules/aws-load-balancer-controller`).
 
 **4. Create the prod secret** `backend-secret` in the `platform-demo` namespace ([7.4](#74-change-a-secret)).
